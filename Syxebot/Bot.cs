@@ -9,6 +9,8 @@ using System.Threading;
 using Syxebot;
 using System.Timers;
 using Syxebot.Data;
+using Newtonsoft.Json;
+using Syxebot.Twitch;
 
 namespace Syxebot.Syxebot
 {
@@ -24,10 +26,14 @@ namespace Syxebot.Syxebot
         private Dictionary<string, int> _cmdFlood;
         //string identifier, string message, int seconds
         private Dictionary<string, KeyValuePair<string, UInt64>> _timedMessages;
-        private bool _isConnected = false;
+        private Dictionary<string, KeyValuePair<string, UInt64>> _disabledTimedMessages;
+        private Dictionary<string, int> _userPoints;
         private System.Timers.Timer _timer;
         private string path;
         private UInt64 _ticks;
+        private List<string> _chatters;
+        private TwitchAPICaller twitchAPICaller;
+        private bool _isChannelLive;
 
         #endregion
 
@@ -48,35 +54,35 @@ namespace Syxebot.Syxebot
             get { return _subscribers; }
             private set { _subscribers = value; }
         }
-        public bool IsConnected
-        {
-            get { return _isConnected; }
-            private set { _isConnected = value; }
-        }
-
         #endregion
 
         #region Constructors
 
         public Bot(IrcConfig ircConfig)
         {
-
-            this._ircConfig = ircConfig;
+            _isChannelLive = false;
+            twitchAPICaller = new TwitchAPICaller("nitemarephoenix");
+            _ircConfig = ircConfig;
             path = ircConfig.debugPath;
             _moderators = new List<string>();
             _subscribers = new List<string>();
             _commands = new Dictionary<string, string>();
             _cmdFlood = new Dictionary<string, int>();
             _timedMessages = new Dictionary<string, KeyValuePair<string, UInt64>>();
+            _disabledTimedMessages = new Dictionary<string, KeyValuePair<string, ulong>>();
+            _userPoints = new Dictionary<string, int>();
+            _chatters = new List<string>();
             _timer = new System.Timers.Timer(1000);
             _timer.AutoReset = true;
             _ticks = 0;
             _timer.Elapsed += (s, e) =>
             {
                 _ticks++;
+                pointsClock();
+                checkStreamStatus();
+                //Console.WriteLine(_ticks.ToString());
                 //log("ticks" + _ticks.ToString());
                 TimedMessageTimer();
-                //TODO: Add timed messages and points (spawn new thread probably or Threading.Timer)
                 FloodTimer();
             };
             _main = new Thread(new ThreadStart(MainThread));
@@ -84,6 +90,9 @@ namespace Syxebot.Syxebot
             _client = new IrcClient("irc.twitch.tv", new IrcUser(_ircConfig.nick, _ircConfig.nick, _ircConfig.password));
 
         }
+
+
+
 
         #endregion
 
@@ -238,23 +247,23 @@ namespace Syxebot.Syxebot
             //TODO: add userlevel switch
             if (cm.Identifiers >= 3 && (cm.MessageParams[1].ToLower() == "add" || cm.MessageParams[1].ToLower() == "edit"))
             {
-                if (!_commands.ContainsKey(cm.MessageParams[1].ToLower()))
+                if (!_commands.ContainsKey(cm.MessageParams[2].ToLower()))
                 {
                     string value = "";
-                    for (int i = 2; i < cm.Identifiers; i++)
+                    for (int i = 3; i < cm.Identifiers; i++)
                     {
                         value += cm.MessageParams[i];
                         value += " ";
                     }
                     if (cm.MessageParams[1].ToLower() == "add")
                     {
-                        _commands.Add(cm.MessageParams[1].ToLower(), value);
-                        _client.SendAction(cm.MessageParams[1].ToLower() + " command added.", cm.Channel.Name);
+                        _commands.Add(cm.MessageParams[2].ToLower(), value);
+                        _client.SendAction(cm.MessageParams[2].ToLower() + " command added.", cm.Channel.Name);
                     }
                     else
                     {
                         _commands[cm.MessageParams[1].ToLower()] = value;
-                        _client.SendAction(cm.MessageParams[1].ToLower() + " command updated.", cm.Channel.Name);
+                        _client.SendAction(cm.MessageParams[2].ToLower() + " command updated.", cm.Channel.Name);
                     }
                 }
                 else
@@ -276,31 +285,30 @@ namespace Syxebot.Syxebot
             }
         }
 
-
         private void doParseTimerCommand(ChatMessage cm)
         {
             //!timer add 3600 steam Come join my steam group!
             if (cm.MessageParams[1].ToLower() == "add" && cm.Identifiers >= 4)
             {
-                UInt64 minutes;
-                bool parseResult = UInt64.TryParse(cm.MessageParams[2], out minutes);
+                UInt64 seconds;
+                bool parseResult = UInt64.TryParse(cm.MessageParams[2], out seconds);
                 if (!parseResult)
                 {
                     _client.SendAction("Invalid parameter.", cm.Channel.Name);
                 }
-                else if (!_timedMessages.ContainsKey(cm.MessageParams[3]))
+                else if (!_timedMessages.ContainsKey(cm.MessageParams[3].ToLower()))
                 {
                     string timedMessage = "";
-                    minutes = minutes * 60;
+
                     for (int i = 4; i < cm.Identifiers; i++)
                     {
                         timedMessage += cm.MessageParams[i];
                         timedMessage += " ";
                     }
-                    _timedMessages.Add(cm.MessageParams[3].ToLower(), new KeyValuePair<string, UInt64>(timedMessage, minutes));
+                    _timedMessages.Add(cm.MessageParams[3].ToLower(), new KeyValuePair<string, UInt64>(timedMessage, seconds));
 
                     //TODO: better message to send
-                    _client.SendAction("Timed message has been added", cm.Channel.Name);
+                    _client.SendAction("Timed message added", cm.Channel.Name);
                 }
                 else
                 {
@@ -308,20 +316,102 @@ namespace Syxebot.Syxebot
                     _client.SendAction("Already exists.", cm.Channel.Name);
                 }
             }
-                //!timer delete steam
+            //!timer delete steam
             else if (cm.MessageParams[1].ToLower() == "del" || cm.MessageParams[1].ToLower() == "rem" || cm.MessageParams[1].ToLower() == "remove" || cm.MessageParams[1].ToLower() == "delete")
             {
-                //TODO: implement logig
+                if (_timedMessages.ContainsKey(cm.MessageParams[2].ToLower()))
+                {
+                    _timedMessages.Remove(cm.MessageParams[2].ToLower());
+                    //TODO: better message to send
+                    _client.SendAction("Timed message deleted", cm.Channel.Name);
+                }
+                //TODO: better message to send
+                else
+                    _client.SendAction("No timed message found", cm.Channel.Name);
             }
-                //!timer stop steam
+            //!timer stop steam
             else if (cm.MessageParams[1].ToLower() == "stop")
             {
-                //TODO: implement logig
+                if (_timedMessages.ContainsKey(cm.MessageParams[2].ToLower()))
+                {
+                    KeyValuePair<string, UInt64> kvp;
+                    if (_timedMessages.TryGetValue(cm.MessageParams[2].ToLower(), out kvp))
+                    {
+                        _disabledTimedMessages.Add(cm.MessageParams[2].ToLower(), kvp);
+                        _timedMessages.Remove(cm.MessageParams[2].ToLower());
+
+                        //TODO: better message to send
+                        _client.SendAction("Timed message stopped", cm.Channel.Name);
+
+                    }
+                }
             }
-                //!timer start steam
+            //!timer start steam
             else if (cm.MessageParams[1].ToLower() == "start")
             {
-                //TODO: implement logig
+                if (_disabledTimedMessages.ContainsKey(cm.MessageParams[2].ToLower()))
+                {
+                    KeyValuePair<string, UInt64> kvp;
+                    if (_disabledTimedMessages.TryGetValue(cm.MessageParams[2].ToLower(), out kvp))
+                    {
+                        _timedMessages.Add(cm.MessageParams[2].ToLower(), kvp);
+                        _disabledTimedMessages.Remove(cm.MessageParams[2].ToLower());
+
+                        //TODO: better message to send
+                        _client.SendAction("Timed message resumed", cm.Channel.Name);
+
+                    }
+                }
+            }
+        }
+
+        private void pointsClock()
+        {
+            if (_isChannelLive)
+            {
+                UInt64 r = _ticks % _ircConfig.PayoutInterval;
+                if (r == 0)
+                {
+                    Console.WriteLine("payout!");
+                    RestClient rc = new RestClient("https://tmi.twitch.tv/group/user/");
+                    RestRequest rr = new RestRequest("{channelName}/chatters", Method.GET);
+                    rr.AddUrlSegment("channelName", _ircConfig.channel.Trim('#'));
+                    RestResponse resp = (RestResponse)rc.Execute(rr);
+                    string content = resp.Content;
+                    log("CONTENT = " + content);
+                    Chatters chatters = JsonConvert.DeserializeObject<Chatters>(content);
+                    #region foreach chatter in chatters.chatters
+                    foreach (var chatter in chatters.chatters.admins)
+                    {
+                        addUserPoints(chatter, 1);
+                    }
+                    foreach (var chatter in chatters.chatters.global_mods)
+                    {
+                        addUserPoints(chatter, 1);
+                    }
+                    foreach (var chatter in chatters.chatters.moderators)
+                    {
+                        addUserPoints(chatter, 1);
+                    }
+                    foreach (var chatter in chatters.chatters.staff)
+                    {
+                        addUserPoints(chatter, 1);
+                    }
+                    foreach (var chatter in chatters.chatters.viewers)
+                    {
+                        addUserPoints(chatter, 1);
+                    }
+                    #endregion
+                }
+            }
+        }
+
+        private void checkStreamStatus()
+        {
+            var r = _ticks % 60;
+            if (r == 0)
+            {
+                _isChannelLive = twitchAPICaller.isChannelLive();
             }
         }
 
@@ -421,6 +511,7 @@ namespace Syxebot.Syxebot
                 {
                     _client.SendAction(timedmsg.Value.Key, _ircConfig.channel);
                     log("timed message fired");
+
                 }
             }
         }
@@ -449,6 +540,16 @@ namespace Syxebot.Syxebot
         #endregion
 
         #region Helpers
+
+        private void addUserPoints(string chatter, int p)
+        {
+            Console.WriteLine("adding points to " + chatter);
+            int q;
+            if (_userPoints.TryGetValue(chatter, out q))
+                _userPoints[chatter] = q + p;
+            else
+                _userPoints.Add(chatter, p);
+        }
 
         bool isOp(List<string> modList, string name)
         {

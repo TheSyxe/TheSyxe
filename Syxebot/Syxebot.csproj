@@ -49,14 +49,21 @@
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
+    <Reference Include="Twitch.Net">
+      <HintPath>..\packages\Twitch.Net\Twitch.Net.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Bot.cs" />
+    <Compile Include="Twitch\Model\ChattersContext.cs" />
     <Compile Include="Data\ChatMessage.cs" />
     <Compile Include="Data\Database.cs" />
     <Compile Include="IrcConfig.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Twitch\ITwitchInterface.cs" />
+    <Compile Include="Twitch\Model\SubCall.cs" />
+    <Compile Include="Twitch\TwitchAPICaller.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
