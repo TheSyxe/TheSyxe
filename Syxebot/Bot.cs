@@ -12,6 +12,8 @@ using Syxebot.Data;
 using Newtonsoft.Json;
 using Syxebot.Twitch;
 
+[assembly: log4net.Config.XmlConfigurator(Watch = true)]
+
 namespace Syxebot.Syxebot
 {
     internal class Bot
@@ -34,7 +36,6 @@ namespace Syxebot.Syxebot
         private List<string> _chatters;
         private TwitchAPICaller twitchAPICaller;
         private bool _isChannelLive;
-
         #endregion
 
         #region Public Properties
@@ -60,9 +61,9 @@ namespace Syxebot.Syxebot
 
         public Bot(IrcConfig ircConfig)
         {
-            _isChannelLive = false;
-            twitchAPICaller = new TwitchAPICaller("nitemarephoenix");
             _ircConfig = ircConfig;
+            _isChannelLive = false;
+            twitchAPICaller = new TwitchAPICaller(_ircConfig.channel.Trim('#'));
             path = ircConfig.debugPath;
             _moderators = new List<string>();
             _subscribers = new List<string>();
@@ -80,8 +81,7 @@ namespace Syxebot.Syxebot
                 _ticks++;
                 pointsClock();
                 checkStreamStatus();
-                //Console.WriteLine(_ticks.ToString());
-                //log("ticks" + _ticks.ToString());
+                //write("ticks" + _ticks.ToString());
                 TimedMessageTimer();
                 FloodTimer();
             };
@@ -121,7 +121,7 @@ namespace Syxebot.Syxebot
             #region bot.ConnectionComplete
             _client.ConnectionComplete += (s, e) =>
             {
-                log("Connected");
+                write("Connected");
                 _timer.Start();
                 _client.SendRawMessage("twitchclient 3");
                 _client.JoinChannel(_ircConfig.channel);
@@ -164,14 +164,14 @@ namespace Syxebot.Syxebot
             //{
             //    if (channelListOfViewers.Contains(e.User.Nick))
             //        channelListOfViewers.Remove(e.User.Nick);
-            //    //else Console.WriteLine("There was a problem. A user left that wasn't in the list.");
+            //    //else write("There was a problem. A user left that wasn't in the list.");
             //};
             #endregion
 
             #region bot.RawMessageRecieved
             //bot.RawMessageRecieved += (s, e) =>
             //{
-            //    Console.WriteLine(e.Message);
+            //    write(e.Message);
             //    using (StreamWriter sw = File.AppendText(path))
             //    {
             //        sw.WriteLine(e.Message);
@@ -182,9 +182,9 @@ namespace Syxebot.Syxebot
             #region bot.MOTDRecieved
             //bot.MOTDRecieved += (s, e) =>
             //{
-            //    Console.WriteLine("Message of the Day:");
-            //    Console.WriteLine(e.MOTD);
-            //    Console.WriteLine("End MoTD");
+            //    write("Message of the Day:");
+            //    write(e.MOTD);
+            //    write("End MoTD");
             //};
             #endregion
 
@@ -202,7 +202,7 @@ namespace Syxebot.Syxebot
                 prefix += "@";
             if (_subscribers.Contains(cm.Nick))
                 prefix += "(Sub)";
-            log(prefix + cm.Nick + ": " + cm.Message);
+            write(prefix + cm.Nick + ": " + cm.Message);
             #endregion
 
             switch (cm.MessageParams[0])
@@ -372,13 +372,13 @@ namespace Syxebot.Syxebot
                 UInt64 r = _ticks % _ircConfig.PayoutInterval;
                 if (r == 0)
                 {
-                    Console.WriteLine("payout!");
+                    write("payout!");
                     RestClient rc = new RestClient("https://tmi.twitch.tv/group/user/");
                     RestRequest rr = new RestRequest("{channelName}/chatters", Method.GET);
                     rr.AddUrlSegment("channelName", _ircConfig.channel.Trim('#'));
                     RestResponse resp = (RestResponse)rc.Execute(rr);
                     string content = resp.Content;
-                    log("CONTENT = " + content);
+                    write("CONTENT = " + content);
                     Chatters chatters = JsonConvert.DeserializeObject<Chatters>(content);
                     #region foreach chatter in chatters.chatters
                     foreach (var chatter in chatters.chatters.admins)
@@ -443,7 +443,7 @@ namespace Syxebot.Syxebot
                 if (_subscribers.Contains(cm.MessageParams[0]))
                     _subscribers.Add(cm.MessageParams[0]);
                 //_client.SendAction(cm.MessageParams[0] + " has just subscribed!", cm.Channel.Name);
-                log(cm.MessageParams[0] + " has just subscribed!");
+                write(cm.MessageParams[0] + " has just subscribed!");
             }
             #endregion
         }
@@ -510,7 +510,7 @@ namespace Syxebot.Syxebot
                 if (r == 0)
                 {
                     _client.SendAction(timedmsg.Value.Key, _ircConfig.channel);
-                    log("timed message fired");
+                    write("timed message fired");
 
                 }
             }
@@ -543,7 +543,7 @@ namespace Syxebot.Syxebot
 
         private void addUserPoints(string chatter, int p)
         {
-            Console.WriteLine("adding points to " + chatter);
+            write("adding points to " + chatter);
             int q;
             if (_userPoints.TryGetValue(chatter, out q))
                 _userPoints[chatter] = q + p;
@@ -560,26 +560,34 @@ namespace Syxebot.Syxebot
                 return false;
         }
 
-        private void log(string s)
+        private void write(string s)
         {
             Console.WriteLine(s);
-#if(DEBUG)
-            if (!File.Exists(path))
-            {
-                using (StreamWriter sw = File.CreateText(path))
-                {
-                    sw.WriteLine(s);
-                }
-            }
-            else
-            {
-                using (StreamWriter sw = File.AppendText(path))
-                {
-                    sw.WriteLine(s);
-                }
-            }
-#endif
+            log.Info(s);
         }
+
+        private static readonly log4net.ILog log = log4net.LogManager.GetLogger
+            (System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+//        private void log(string s)
+//        {
+//            write(s);
+//#if(DEBUG)
+//            if (!File.Exists(path))
+//            {
+//                using (StreamWriter sw = File.CreateText(path))
+//                {
+//                    sw.WriteLine(s);
+//                }
+//            }
+//            else
+//            {
+//                using (StreamWriter sw = File.AppendText(path))
+//                {
+//                    sw.WriteLine(s);
+//                }
+//            }
+//#endif
+//        }
         #endregion
 
     }

@@ -15,45 +15,14 @@ namespace Syxebot.Syxebot
 
     class Program
     {
-        //TODO: incorporate logging
-        //    private static readonly log4net.ILog log = log4net.LogManager.GetLogger
-        //(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
-
         static void Main(string[] args)
         {
+            //Bot c = new Bot(new IrcConfig("thephoenixbot", "#thesyxe", "oauth:2x7hxpn82zzd1vigtb8sdr43sgw4vwk"));
             Bot b = new Bot(new IrcConfig());
             b.Start();
+            c.Start();
             Console.ReadLine();
-            //string path = @"D:\KSP\temp.txt";
-            //if (!File.Exists(path))
-            //{
-            //    // Create a file to write to. 
-            //    using (StreamWriter sw = File.CreateText(path))
-            //    {
-            //        sw.WriteLine("TOP");
-            //    }
-            //}
-            //IrcConfig config = new IrcConfig();
-            //IrcClient client = new IrcClient(config.server, new IrcUser(config.nick, config.nick, config.password));
-            //client.ConnectionComplete += (s, e) =>
-            //{
-            //    client.JoinChannel(config.channel);
-            //};
-            //client.ChannelMessageRecieved += (s, e) =>
-            //    {
-            //        log("COMMAND = " + e.IrcMessage.Command);
-            //        for (int i = 0; i < e.IrcMessage.Parameters.Length; i++)
-            //        {
-            //            log("Param " + i + " = " + e.IrcMessage.Parameters[i]);
-            //        }
-                    
-
-            //    };
-            //client.ConnectAsync();
-            //while (true) {
-
-            //}
-
+            
         }
 
 
